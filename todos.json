@@ -1,0 +1,24 @@
+{
+    "next_id": 4,
+    "todos": [
+        {
+            "id": 1,
+            "task": "Edited task",
+            "done": false,
+            "priority": "high",
+            "due_date": "2025-01-15"
+        },
+        {
+            "id": 2,
+            "task": "Do the search() exercise in this file",
+            "done": false,
+            "priority": "low"
+        },
+        {
+            "id": 3,
+            "task": "Watch an AI agent add a feature for real",
+            "done": false,
+            "priority": "high"
+        }
+    ]
+}

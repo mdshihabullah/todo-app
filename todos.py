@@ -24,6 +24,8 @@ TODOS = [
 ]
 
 _next_id = 4  # ids only go up, never reused
+_filter_priority = None  # None means show all
+_search_query = None  # None means show all
 
 
 def _seed_next_id():
@@ -92,11 +94,32 @@ def toggle(todo_id):
     return None
 
 
-def delete(todo_id):
-    """Remove the todo with this id."""
+def edit(todo_id, task, priority, due_date):
+    """Edit the todo with this id.
+
+    Returns the updated todo dict, or None if not found.
+    """
     global TODOS
-    TODOS = [t for t in TODOS if t["id"] != todo_id]
-    save()
+    if priority not in ("low", "medium", "high"):
+        priority = "medium"
+    for todo in TODOS:
+        if todo["id"] == todo_id:
+            todo["task"] = task
+            todo["priority"] = priority
+            todo["due_date"] = due_date or ""
+            save()
+            return todo
+    return None
+
+
+def filter_by_priority(priority):
+    """Return todos matching this priority.
+
+    If priority is empty, returns all todos.
+    """
+    if not priority:
+        return TODOS
+    return [t for t in TODOS if t.get("priority") == priority]
 
 
 def stats():
@@ -110,10 +133,15 @@ def stats():
 load()  # hydrate from disk (falls back to seeds on first run)
 
 def rows_html():
-    """Render the todo list as <li> rows with toggle and delete buttons."""
+    """Render the todo list as <li> rows with toggle, delete, and edit buttons."""
     out = []
     today = date.today()
-    for t in TODOS:
+    todos_list = TODOS
+    if _filter_priority:
+        todos_list = [t for t in TODOS if t.get("priority") == _filter_priority]
+    if _search_query:
+        todos_list = [t for t in todos_list if _search_query in t["task"].lower()]
+    for t in todos_list:
         task = html.escape(t["task"])  # never trust user input in HTML
         priority = html.escape(t.get("priority", "medium"))
         cls = ' class="done"' if t["done"] else ""
@@ -132,9 +160,13 @@ def rows_html():
             f'<li{cls}>'
             f'<form method="post" action="/toggle" class="row">'
             f'<input type="hidden" name="id" value="{t["id"]}">'
+            f'<input type="hidden" name="edit_task" value="{t["task"]}">'
+            f'<input type="hidden" name="edit_priority" value="{t["priority"]}">'
+            f'<input type="hidden" name="edit_due_date" value="{due_date}">'
             f'<button class="tick" title="toggle">{tick}</button>'
             f'<span class="task">{task}</span>'
             f'{badges}'
+            f'<button class="edit" type="submit" name="action" value="edit" title="edit">✎</button>'
             f'<button class="del" formaction="/delete" title="delete">&#10005;</button>'
             f'</form></li>'
         )

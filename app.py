@@ -9,6 +9,9 @@ Routes:
     POST /add       add a todo       (form field: task)
     POST /toggle    flip done        (form field: id)
     POST /delete    remove a todo    (form field: id)
+    POST /edit      edit a todo      (form fields: id, task, priority, due_date)
+    POST /filter    filter by priority (form field: priority)
+    POST /search    search todos       (form field: query)
 
 The logic lives in todos.py — that's the file you'll grow first.
 """
@@ -62,9 +65,23 @@ class TodoHandler(BaseHTTPRequestHandler):
         elif self.path == "/delete":
             todos.delete(int(form.get("id", ["0"])[0]))
             self._redirect()
+        elif self.path == "/edit":
+            todo_id = int(form.get("id", ["0"])[0])
+            task = form.get("task", [""])[0].strip()
+            priority = form.get("priority", ["medium"])[0].strip().lower()
+            due_date = form.get("due_date", [""])[0].strip()
+            todos.edit(todo_id, task, priority, due_date)
+            self._redirect()
+        elif self.path == "/filter":
+            priority = form.get("priority", [""])[0].strip().lower()
+            todos._filter_priority = priority if priority else None
+            self._redirect("/")
+        elif self.path == "/search":
+            query = form.get("query", [""])[0].strip()
+            todos._search_query = query if query else None
+            self._redirect("/")
         else:
             self.send_error(404)
-
 
 if __name__ == "__main__":
     print(f"Tiny Todo running at http://localhost:{PORT}  (Ctrl+C to stop)")

@@ -21,6 +21,7 @@
   ul { list-style: none; padding: 0; margin: 8px 0 0; }
   li { border-top: 1px solid var(--line); }
   li:first-child { border-top: none; }
+  .empty { color: var(--muted); padding: 12px 2px; font-size: 14px; list-style: none; }
   form.row { display: flex; align-items: center; gap: 8px; padding: 10px 2px; }
   button.tick { background: #eef1fd; color: var(--accent); width: 26px; height: 26px; border-radius: 50%; font-size: 13px; flex-shrink: 0; }
   button.del { background: none; color: var(--muted); font-size: 13px; margin-left: auto; flex-shrink: 0; }
@@ -50,6 +51,17 @@
         </select>
         <input type="date" name="due_date" title="Due date (YYYY-MM-DD)" placeholder="YYYY-MM-DD">
         <button>Add</button>
+      </form>
+      <form method="post" action="/filter" class="filter">
+        <select name="priority">
+          <option value="">All</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+      </form>
+      <form method="post" action="/search" class="search" style="margin-top:12px;">
+        <input type="text" name="query" placeholder="Search..." style="width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 15px;">
       </form>
       <div class="stats">
         <span>{{STAT_TOTAL}} total</span>
