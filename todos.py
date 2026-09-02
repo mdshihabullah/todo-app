@@ -173,7 +173,7 @@ def rows_html():
             f'<button class="tick" title="toggle">{tick}</button>'
             f'<span class="task">{task}</span>'
             f'{badges}'
-            f'<button class="edit" type="submit" name="action" value="edit" title="edit">✎</button>'
+            f'<button class="edit" type="submit" name="action" value="edit" title="edit" formaction="/edit">✎</button>'
             f'<button class="del" formaction="/delete" title="delete">&#10005;</button>'
             f'</form></li>'
         )
