@@ -93,6 +93,13 @@ def toggle(todo_id):
             return todo
     return None
 
+def delete(todo_id):
+    """Remove the todo with this id."""
+    global TODOS
+    TODOS = [t for t in TODOS if t["id"] != todo_id]
+    save()
+
+
 
 def edit(todo_id, task, priority, due_date):
     """Edit the todo with this id.
