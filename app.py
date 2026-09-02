@@ -1,0 +1,71 @@
+"""Tiny Todo — the web layer (routing + HTTP).
+
+Run:
+    python3 app.py
+    open http://localhost:9990
+
+Routes:
+    GET  /          the page
+    POST /add       add a todo       (form field: task)
+    POST /toggle    flip done        (form field: id)
+    POST /delete    remove a todo    (form field: id)
+
+The logic lives in todos.py — that's the file you'll grow first.
+"""
+
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import parse_qs
+
+import todos
+
+PORT = 9990
+
+
+class TodoHandler(BaseHTTPRequestHandler):
+    def _page(self):
+        body = todos.render_page().encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _redirect(self, to="/"):
+        self.send_response(303)  # "see other" — browser follows back to the page
+        self.send_header("Location", to)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _form(self):
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        data = self.rfile.read(length).decode("utf-8")
+        return parse_qs(data)
+
+    def do_GET(self):
+        if self.path in ("/", "/index.html"):
+            self._page()
+        else:
+            self.send_error(404, "No such page")
+
+    def do_POST(self):
+        form = self._form()
+        if self.path == "/add":
+            task = form.get("task", [""])[0].strip()
+            priority = form.get("priority", ["medium"])[0].strip().lower()
+            due_date = form.get("due_date", [""])[0].strip()
+            if task:
+                todos.add(task, priority, due_date)
+            self._redirect()
+        elif self.path == "/toggle":
+            todos.toggle(int(form.get("id", ["0"])[0]))
+            self._redirect()
+        elif self.path == "/delete":
+            todos.delete(int(form.get("id", ["0"])[0]))
+            self._redirect()
+        else:
+            self.send_error(404)
+
+
+if __name__ == "__main__":
+    print(f"Tiny Todo running at http://localhost:{PORT}  (Ctrl+C to stop)")
+    HTTPServer(("", PORT), TodoHandler).serve_forever()
