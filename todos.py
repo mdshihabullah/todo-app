@@ -26,7 +26,7 @@ TODOS = [
 _next_id = 4  # ids only go up, never reused
 _filter_priority = None  # None means show all
 _search_query = None  # None means show all
-_editing_id = None  # the id of the todo currently being edited, or None
+_show_done = False  # completed todos hidden by default; toggle to reveal
 
 
 def _seed_next_id():
@@ -56,8 +56,17 @@ def load():
     try:
         data = json.loads(_DB_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
+        # Never silently destroy the user's data: preserve the corrupt file
+        # (once) beside the store, then fall back to seed so the app stays up.
         print(f"[todos] WARNING: could not load {_DB_PATH.name}: {exc!r}",
               file=sys.stderr)
+        if not _DB_PATH.with_suffix(_DB_PATH.suffix + ".bak").exists():
+            try:
+                bak = _DB_PATH.with_suffix(_DB_PATH.suffix + ".bak")
+                _DB_PATH.replace(bak)
+                print(f"[todos] preserved corrupt file as {bak.name}", file=sys.stderr)
+            except OSError:
+                pass
         return
     loaded = data.get("todos", []) if isinstance(data, dict) else []
     TODOS = [t for t in loaded if isinstance(t, dict) and "id" in t]
@@ -68,8 +77,12 @@ def load():
 
 
 def add(task, priority="medium", due_date=""):
-    """Add a new todo (string). Returns the new todo dict."""
+    """Add a new todo (string). Returns the new todo dict, or None if the
+    task is empty/whitespace-only (robust: nothing is added)."""
     global _next_id
+    task = (task or "").strip()
+    if not task:
+        return None
     if priority not in ("low", "medium", "high"):
         priority = "medium"
     todo = {
@@ -95,24 +108,57 @@ def toggle(todo_id):
     return None
 
 def delete(todo_id):
-    """Remove the todo with this id."""
+    """Remove the todo with this id. Returns the removed todo dict (for undo),
+    or None if it wasn't found."""
     global TODOS
-    TODOS = [t for t in TODOS if t["id"] != todo_id]
-    save()
+    removed = None
+    for t in TODOS:
+        if t["id"] == todo_id:
+            removed = t
+            break
+    if removed is not None:
+        TODOS = [t for t in TODOS if t["id"] != todo_id]
+        save()
+    return removed
 
+
+def restore(task, priority="medium", due_date="", done=False):
+    """Re-insert a previously deleted todo. IDs are monotonic and never reused,
+    so a restored todo gets a fresh id (the original is gone for good)."""
+    global _next_id
+    task = (task or "").strip()
+    if not task:
+        return None
+    if priority not in ("low", "medium", "high"):
+        priority = "medium"
+    todo = {
+        "id": _next_id,
+        "task": task,
+        "done": done,
+        "priority": priority,
+        "due_date": due_date or "",
+    }
+    TODOS.append(todo)
+    _next_id += 1
+    save()
+    return todo
 
 
 def edit(todo_id, task, priority, due_date):
     """Edit the todo with this id.
 
-    Returns the updated todo dict, or None if not found.
+    A blank/whitespace task preserves the existing text rather than wiping it
+    (robust against accidental clearing). Returns the updated todo dict, or
+    None if not found.
     """
     global TODOS
     if priority not in ("low", "medium", "high"):
         priority = "medium"
+    new_task = (task or "").strip()
     for todo in TODOS:
         if todo["id"] == todo_id:
-            todo["task"] = task
+            if new_task:
+                todo["task"] = new_task
             todo["priority"] = priority
             todo["due_date"] = due_date or ""
             save()
@@ -130,16 +176,15 @@ def filter_by_priority(priority):
     return [t for t in TODOS if t.get("priority") == priority]
 
 
-def set_editing(todo_id):
-    """Enter edit mode for the todo with this id."""
-    global _editing_id
-    _editing_id = todo_id
+def set_show_done(show):
+    """Control whether completed todos are rendered (view filter)."""
+    global _show_done
+    _show_done = bool(show)
 
 
-def clear_editing():
-    """Leave edit mode (no row is being edited)."""
-    global _editing_id
-    _editing_id = None
+def show_done():
+    """Return whether completed todos are currently shown."""
+    return _show_done
 
 
 def stats():
@@ -152,62 +197,55 @@ def stats():
 
 load()  # hydrate from disk (falls back to seeds on first run)
 
-def rows_html():
-    """Render the todo list as <li> rows with toggle, delete, and edit buttons."""
-    out = []
-    today = date.today()
+def _visible_todos():
+    """Apply the active view filters in order: priority, then search, then the
+    completed/hidden-by-default toggle. Filter and search AND-compose, and the
+    completed toggle is a separate view concern layered on top."""
     todos_list = TODOS
     if _filter_priority:
-        todos_list = [t for t in TODOS if t.get("priority") == _filter_priority]
+        todos_list = [t for t in todos_list if t.get("priority") == _filter_priority]
     if _search_query:
         q = _search_query.lower()
         todos_list = [t for t in todos_list if q in t["task"].lower()]
-    for t in todos_list:
-        if _editing_id == t["id"]:
-            out.append(_edit_row_html(t, today))
-        else:
-            out.append(_display_row_html(t, today))
-    return "\n        ".join(out) or '<li class="empty">Nothing here — add something.</li>'
+    if not _show_done:
+        todos_list = [t for t in todos_list if not t.get("done")]
+    return todos_list
+
+
+def rows_html():
+    """Render the visible todo list as <li> rows for edit/delete via modal + toast."""
+    out = []
+    today = date.today()
+    for t in _visible_todos():
+        out.append(_display_row_html(t, today))
+    if not out:
+        return '<li class="empty">Nothing here — add something.</li>'
+    return "\n        ".join(out)
 
 
 def _display_row_html(t, today):
-    """Render a read-only todo row with toggle, delete, and edit buttons."""
+    """Render a todo row. Data attributes drive the modal edit and the delete
+    toast-undo in the browser; no server-side inline-edit state is needed."""
     task = html.escape(t["task"])  # never trust user input in HTML
     priority = html.escape(t.get("priority", "medium"))
     cls = ' class="done"' if t["done"] else ""
     tick = "&#8635;" if t["done"] else "&#10003;"  # ↺ : ✓
     badges = _badges_html(t, today, priority)
+    data = html.escape(
+        json.dumps({
+            "id": t["id"], "task": t["task"], "priority": t.get("priority", "medium"),
+            "due_date": t.get("due_date", ""),
+        }), quote=True
+    )
     return (
-        f'<li{cls}>'
+        f'<li{cls} data-todo="{data}">'
         f'<form method="post" action="/toggle" class="row">'
         f'<input type="hidden" name="id" value="{t["id"]}">'
         f'<button class="tick" title="toggle">{tick}</button>'
         f'<span class="task">{task}</span>'
         f'{badges}'
-        f'<button class="edit" type="submit" name="action" value="edit" title="edit" formaction="/edit/start">✎</button>'
-        f'<button class="del" formaction="/delete" title="delete">&#10005;</button>'
-        f'</form></li>'
-    )
-
-
-def _edit_row_html(t, today):
-    """Render the row being edited as an editable inline form."""
-    task = html.escape(t["task"])
-    priority = html.escape(t.get("priority", "medium"))
-    due_date = html.escape(t.get("due_date", ""))
-    options = "".join(
-        f'<option value="{p}"{" selected" if p == priority else ""}>{p.title()}</option>'
-        for p in ("low", "medium", "high")
-    )
-    return (
-        f'<li>'
-        f'<form method="post" action="/edit" class="row">'
-        f'<input type="hidden" name="id" value="{t["id"]}">'
-        f'<input type="text" name="task" value="{task}" class="input-edit-task">'
-        f'<select name="priority" class="edit-select">{options}</select>'
-        f'<input type="date" name="due_date" value="{due_date}">'
-        f'<button type="submit">Save</button>'
-        f'<button name="action" value="cancel" formaction="/edit/cancel">Cancel</button>'
+        f'<button class="edit" type="button" title="edit" data-edit aria-label="Edit">✎</button>'
+        f'<button class="del" type="button" title="delete" data-delete aria-label="Delete">&#10005;</button>'
         f'</form></li>'
     )
 
@@ -231,12 +269,24 @@ def render_page():
     """Fill page.html's placeholders with live todos."""
     page = (Path(__file__).parent / "page.html").read_text(encoding="utf-8")
     total, open_n, done = stats()
+    search_value = html.escape(_search_query or "", quote=True)
+    fp = _filter_priority or ""
+    search_active = "is-active" if _search_query else ""
+    sel_low = " selected" if fp == "low" else ""
+    sel_med = " selected" if fp == "medium" else ""
+    sel_high = " selected" if fp == "high" else ""
     return (
         page
         .replace("{{TODO_ROWS}}", rows_html())
         .replace("{{STAT_TOTAL}}", str(total))
         .replace("{{STAT_OPEN}}", str(open_n))
         .replace("{{STAT_DONE}}", str(done))
+        .replace("{{SHOW_DONE}}", "checked" if _show_done else "")
+        .replace("{{SEARCH_VALUE}}", search_value)
+        .replace("{{SEARCH_ACTIVE}}", search_active)
+        .replace("{{SEL_LOW}}", sel_low)
+        .replace("{{SEL_MED}}", sel_med)
+        .replace("{{SEL_HIGH}}", sel_high)
     )
 def search(query):
     """Return todos whose task text contains `query`, case-insensitive."""

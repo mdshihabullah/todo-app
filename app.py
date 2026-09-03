@@ -9,11 +9,12 @@ Routes:
     POST /add       add a todo       (form field: task)
     POST /toggle    flip done        (form field: id)
     POST /delete    remove a todo    (form field: id)
+    POST /restore   re-insert a deleted todo (form fields: task, priority, due_date, done)
     POST /edit      edit a todo      (form fields: id, task, priority, due_date)
-    POST /edit/start   enter edit mode for a todo (form field: id)
-    POST /edit/cancel  leave edit mode without saving
     POST /filter    filter by priority (form field: priority)
     POST /search    search todos       (form field: query)
+    POST /toggle-done  show/hide completed todos (form field: show_done)
+    POST /reset-filters  clear the active search + priority filter
 
 The logic lives in todos.py — that's the file you'll grow first.
 """
@@ -58,8 +59,7 @@ class TodoHandler(BaseHTTPRequestHandler):
             task = form.get("task", [""])[0].strip()
             priority = form.get("priority", ["medium"])[0].strip().lower()
             due_date = form.get("due_date", [""])[0].strip()
-            if task:
-                todos.add(task, priority, due_date)
+            todos.add(task, priority, due_date)
             self._redirect()
         elif self.path == "/toggle":
             todos.toggle(int(form.get("id", ["0"])[0]))
@@ -67,19 +67,19 @@ class TodoHandler(BaseHTTPRequestHandler):
         elif self.path == "/delete":
             todos.delete(int(form.get("id", ["0"])[0]))
             self._redirect()
+        elif self.path == "/restore":
+            task = form.get("task", [""])[0].strip()
+            priority = form.get("priority", ["medium"])[0].strip().lower()
+            due_date = form.get("due_date", [""])[0].strip()
+            done = form.get("done", [""])[0].strip().lower() in ("1", "true", "on")
+            todos.restore(task, priority, due_date, done)
+            self._redirect()
         elif self.path == "/edit":
             todo_id = int(form.get("id", ["0"])[0])
             task = form.get("task", [""])[0].strip()
             priority = form.get("priority", ["medium"])[0].strip().lower()
             due_date = form.get("due_date", [""])[0].strip()
             todos.edit(todo_id, task, priority, due_date)
-            todos.clear_editing()
-            self._redirect()
-        elif self.path == "/edit/start":
-            todos.set_editing(int(form.get("id", ["0"])[0]))
-            self._redirect()
-        elif self.path == "/edit/cancel":
-            todos.clear_editing()
             self._redirect()
         elif self.path == "/filter":
             priority = form.get("priority", [""])[0].strip().lower()
@@ -88,6 +88,14 @@ class TodoHandler(BaseHTTPRequestHandler):
         elif self.path == "/search":
             query = form.get("query", [""])[0].strip()
             todos._search_query = query if query else None
+            self._redirect("/")
+        elif self.path == "/toggle-done":
+            form_value = form.get("show_done", [""])[0].strip().lower()
+            todos.set_show_done(form_value in ("1", "true", "on"))
+            self._redirect("/")
+        elif self.path == "/reset-filters":
+            todos._search_query = None
+            todos._filter_priority = None
             self._redirect("/")
         else:
             self.send_error(404)
