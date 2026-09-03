@@ -1,0 +1,7 @@
+# Python build/runtime artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local runtime data (per-machine, not source)
+todos.json
