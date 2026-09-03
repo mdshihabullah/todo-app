@@ -3,6 +3,7 @@
 Run:  python3 -m unittest discover -s tests -v
 """
 
+import json
 import os
 import tempfile
 import unittest
@@ -25,6 +26,7 @@ class TodoTestCase(unittest.TestCase):
         self._orig_todos = todos.TODOS
         self._orig_next_id = todos._next_id
         self._orig_filter = todos._filter_priority
+        self._orig_cat = todos._filter_category
         self._orig_query = todos._search_query
         self._orig_show = todos._show_done
 
@@ -38,6 +40,7 @@ class TodoTestCase(unittest.TestCase):
         ]
         todos._next_id = 4
         todos._filter_priority = None
+        todos._filter_category = None
         todos._search_query = None
         todos._show_done = False
 
@@ -45,6 +48,7 @@ class TodoTestCase(unittest.TestCase):
         todos.TODOS = self._orig_todos
         todos._next_id = self._orig_next_id
         todos._filter_priority = self._orig_filter
+        todos._filter_category = self._orig_cat
         todos._search_query = self._orig_query
         todos._show_done = self._orig_show
         todos._DB_PATH = self._orig_db_path
@@ -249,6 +253,148 @@ class TestSearchFunction(TodoTestCase):
 
     def test_search_no_match_empty(self):
         self.assertEqual(todos.search("xyz"), [])
+
+
+class TestCategory(TodoTestCase):
+    """add()/edit()/restore() carry an optional category; it renders as a badge."""
+
+    def test_add_stores_category(self):
+        t = todos.add("Build feature", "high", "2026-12-01", "frontend", "Add the modal")
+        self.assertEqual(t["category"], "frontend")
+
+    def test_add_blank_category_stored_empty(self):
+        t = todos.add("No cat")
+        self.assertEqual(t["category"], "")
+
+    def test_add_trims_category_whitespace(self):
+        t = todos.add("Task", "medium", "", "  shopping  ")
+        self.assertEqual(t["category"], "shopping")
+
+    def test_edit_updates_category(self):
+        todos.edit(1, "New task", "high", "2026-12-31", "work", "Do it")
+        self.assertEqual(todos.TODOS[0]["category"], "work")
+        self.assertEqual(todos.TODOS[0]["description"], "Do it")
+
+    def test_restore_preserves_category_and_description(self):
+        t = todos.add("Original", "medium", "", "cat", "detail")
+        removed = todos.delete(t["id"])
+        restored = todos.restore(removed["task"], removed["priority"],
+                                 removed["due_date"], removed["done"],
+                                 removed["category"], removed["description"])
+        self.assertEqual(restored["category"], "cat")
+        self.assertEqual(restored["description"], "detail")
+
+    def test_category_badge_rendered(self):
+        todos.add("Assign cat", "low", "", "billing")
+        html = todos.rows_html()
+        self.assertIn('badge-category', html)
+        self.assertIn('billing', html)
+
+    def test_category_filter_narrows_rows(self):
+        todos.add("A", "medium", "", "alpha")
+        todos.add("B", "medium", "", "beta")
+        todos._filter_category = "alpha"
+        html = todos.rows_html()
+        self.assertIn("A", html)
+        self.assertNotIn("B", html)
+
+    def test_category_filter_is_case_insensitive(self):
+        todos.add("A", "medium", "", "Alpha")
+        todos._filter_category = "ALPHA"
+        html = todos.rows_html()
+        self.assertIn("A", html)
+
+
+class TestDescription(TodoTestCase):
+    """add()/edit()/restore() carry an optional description; it renders expandable."""
+
+    def test_add_stores_description(self):
+        t = todos.add("Task", "medium", "", "", "Longer details here")
+        self.assertEqual(t["description"], "Longer details here")
+
+    def test_add_blank_description_stored_empty(self):
+        t = todos.add("Task")
+        self.assertEqual(t["description"], "")
+
+    def test_edit_updates_description(self):
+        todos.edit(1, "New task", "high", "", "cat", "new desc")
+        self.assertEqual(todos.TODOS[0]["description"], "new desc")
+
+    def test_description_renders_toggle_and_content_when_present(self):
+        todos.add("Has desc", "medium", "", "cat", "Hidden detail")
+        html = todos.rows_html()
+        self.assertIn('class="desc-toggle"', html)
+        self.assertIn('class="desc" hidden', html)
+        self.assertIn("Hidden detail", html)
+
+    def test_no_description_renders_no_toggle(self):
+        html = todos.rows_html()
+        self.assertNotIn('class="desc-toggle"', html)
+
+
+class TestBulkActions(TodoTestCase):
+    """mark_all_done() and clear_completed() operate across the whole list."""
+
+    def test_mark_all_done_marks_everything(self):
+        todos.TODOS[0]["done"] = False
+        updated = todos.mark_all_done()
+        self.assertEqual(updated, 3)
+        self.assertTrue(all(t["done"] for t in todos.TODOS))
+
+    def test_mark_all_done_idempotent(self):
+        for t in todos.TODOS:
+            t["done"] = True
+        self.assertEqual(todos.mark_all_done(), 0)
+
+    def test_clear_completed_removes_only_done(self):
+        todos.TODOS[0]["done"] = True
+        removed = todos.clear_completed()
+        self.assertEqual(removed, 1)
+        self.assertEqual(len(todos.TODOS), 2)
+        self.assertTrue(any(t["id"] == 2 for t in todos.TODOS))
+        self.assertTrue(any(t["id"] == 3 for t in todos.TODOS))
+
+    def test_clear_completed_nothing_to_clear(self):
+        self.assertEqual(todos.clear_completed(), 0)
+        self.assertEqual(len(todos.TODOS), 3)
+
+
+class TestExport(TodoTestCase):
+    """export_json() returns all todos as a JSON array."""
+
+    def test_export_returns_json_array(self):
+        data = todos.export_json()
+        parsed = json.loads(data)
+        self.assertIsInstance(parsed, list)
+        self.assertEqual(len(parsed), 3)
+
+    def test_export_includes_new_fields_when_present(self):
+        todos.add("Cat task", "high", "", "work", "description here")
+        parsed = json.loads(todos.export_json())
+        task = [t for t in parsed if t.get("category") == "work"][0]
+        self.assertEqual(task["category"], "work")
+        self.assertEqual(task["description"], "description here")
+
+
+class TestShowDoneAllTasks(TodoTestCase):
+    """Toggle ON must reveal ALL tasks (open + done), toggle OFF only open."""
+
+    def test_toggle_on_shows_open_and_done(self):
+        todos.TODOS[0]["done"] = True
+        todos.set_show_done(True)
+        html = todos.rows_html()
+        # Both the done and the open ones are visible.
+        self.assertIn("Run the app and add a todo of your own", html)
+        self.assertIn("Do the search()", html)
+        self.assertIn("Watch an AI", html)
+
+    def test_toggle_off_shows_only_open(self):
+        todos.TODOS[0]["done"] = True
+        todos.set_show_done(False)
+        html = todos.rows_html()
+        self.assertNotIn("Run the app and add a todo of your own", html)
+        self.assertIn("Do the search()", html)
+        self.assertIn("Watch an AI", html)
 
 
 if __name__ == "__main__":

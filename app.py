@@ -6,15 +6,18 @@ Run:
 
 Routes:
     GET  /          the page
-    POST /add       add a todo       (form field: task)
+    GET  /export    download all todos as JSON
+    POST /add       add a todo       (form fields: task, priority, due_date, category, description)
     POST /toggle    flip done        (form field: id)
     POST /delete    remove a todo    (form field: id)
-    POST /restore   re-insert a deleted todo (form fields: task, priority, due_date, done)
-    POST /edit      edit a todo      (form fields: id, task, priority, due_date)
-    POST /filter    filter by priority (form field: priority)
+    POST /restore   re-insert a deleted todo (form fields: task, priority, due_date, done, category, description)
+    POST /edit      edit a todo      (form fields: id, task, priority, due_date, category, description)
+    POST /filter    filter by priority + category (form fields: priority, category)
     POST /search    search todos       (form field: query)
     POST /toggle-done  show/hide completed todos (form field: show_done)
-    POST /reset-filters  clear the active search + priority filter
+    POST /reset-filters  clear the active search + priority/category filter
+    POST /mark-all-done  mark every todo as done
+    POST /clear-completed remove all completed todos
 
 The logic lives in todos.py — that's the file you'll grow first.
 """
@@ -50,8 +53,19 @@ class TodoHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             self._page()
+        elif self.path == "/export":
+            self._export()
         else:
             self.send_error(404, "No such page")
+
+    def _export(self):
+        body = todos.export_json().encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Disposition", 'attachment; filename="todos.json"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self):
         form = self._form()
@@ -59,7 +73,9 @@ class TodoHandler(BaseHTTPRequestHandler):
             task = form.get("task", [""])[0].strip()
             priority = form.get("priority", ["medium"])[0].strip().lower()
             due_date = form.get("due_date", [""])[0].strip()
-            todos.add(task, priority, due_date)
+            category = form.get("category", [""])[0].strip()
+            description = form.get("description", [""])[0].strip()
+            todos.add(task, priority, due_date, category, description)
             self._redirect()
         elif self.path == "/toggle":
             todos.toggle(int(form.get("id", ["0"])[0]))
@@ -72,18 +88,24 @@ class TodoHandler(BaseHTTPRequestHandler):
             priority = form.get("priority", ["medium"])[0].strip().lower()
             due_date = form.get("due_date", [""])[0].strip()
             done = form.get("done", [""])[0].strip().lower() in ("1", "true", "on")
-            todos.restore(task, priority, due_date, done)
+            category = form.get("category", [""])[0].strip()
+            description = form.get("description", [""])[0].strip()
+            todos.restore(task, priority, due_date, done, category, description)
             self._redirect()
         elif self.path == "/edit":
             todo_id = int(form.get("id", ["0"])[0])
             task = form.get("task", [""])[0].strip()
             priority = form.get("priority", ["medium"])[0].strip().lower()
             due_date = form.get("due_date", [""])[0].strip()
-            todos.edit(todo_id, task, priority, due_date)
+            category = form.get("category", [""])[0].strip()
+            description = form.get("description", [""])[0].strip()
+            todos.edit(todo_id, task, priority, due_date, category, description)
             self._redirect()
         elif self.path == "/filter":
             priority = form.get("priority", [""])[0].strip().lower()
+            category = form.get("category", [""])[0].strip()
             todos._filter_priority = priority if priority else None
+            todos._filter_category = category if category else None
             self._redirect("/")
         elif self.path == "/search":
             query = form.get("query", [""])[0].strip()
@@ -96,6 +118,13 @@ class TodoHandler(BaseHTTPRequestHandler):
         elif self.path == "/reset-filters":
             todos._search_query = None
             todos._filter_priority = None
+            todos._filter_category = None
+            self._redirect("/")
+        elif self.path == "/mark-all-done":
+            todos.mark_all_done()
+            self._redirect("/")
+        elif self.path == "/clear-completed":
+            todos.clear_completed()
             self._redirect("/")
         else:
             self.send_error(404)

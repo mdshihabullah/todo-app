@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.venv/
 
 # Local runtime data (per-machine, not source)
 todos.json

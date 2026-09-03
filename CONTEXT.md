@@ -14,6 +14,11 @@ This `CONTEXT.md` contains the domain vocabulary for the Tiny Todo application. 
 | **done** | A boolean flag indicating whether the todo has been completed |
 | **id** | A monotonic, never-reused integer identifier for each todo |
 | **due_date** | An optional ISO-format date (`YYYY-MM-DD`); if past today and not done, renders an "overdue" badge |
+| **category** | An optional free-text tag shown as a subtle badge; filterable in the filter bar alongside priority |
+| **description** | An optional longer free-text field hidden behind a per-row toggle, revealed in a `div.desc` |
+| **mark_all_done** | Bulk action that marks every open todo as done |
+| **clear_completed** | Bulk action that removes all done todos |
+| **export** | `GET /export` returns all todos as an `application/json` attachment download |
 | **search** | Case-insensitive substring match on task text; returns matching todos |
 | **render** | Filling `page.html`'s placeholders (`{{TODO_ROWS}}`, `{{STAT_TOTAL}}`, `{{STAT_OPEN}}`, `{{STAT_DONE}}`) with live todo data |
 | **stats** | The triple `(total, open, done)` — total count of todos, number not done, number done |
