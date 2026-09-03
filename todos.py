@@ -26,6 +26,7 @@ TODOS = [
 _next_id = 4  # ids only go up, never reused
 _filter_priority = None  # None means show all
 _search_query = None  # None means show all
+_editing_id = None  # the id of the todo currently being edited, or None
 
 
 def _seed_next_id():
@@ -129,6 +130,18 @@ def filter_by_priority(priority):
     return [t for t in TODOS if t.get("priority") == priority]
 
 
+def set_editing(todo_id):
+    """Enter edit mode for the todo with this id."""
+    global _editing_id
+    _editing_id = todo_id
+
+
+def clear_editing():
+    """Leave edit mode (no row is being edited)."""
+    global _editing_id
+    _editing_id = None
+
+
 def stats():
     """Return (total, open, done)."""
     done = sum(1 for t in TODOS if t["done"])
@@ -147,37 +160,71 @@ def rows_html():
     if _filter_priority:
         todos_list = [t for t in TODOS if t.get("priority") == _filter_priority]
     if _search_query:
-        todos_list = [t for t in todos_list if _search_query in t["task"].lower()]
+        q = _search_query.lower()
+        todos_list = [t for t in todos_list if q in t["task"].lower()]
     for t in todos_list:
-        task = html.escape(t["task"])  # never trust user input in HTML
-        priority = html.escape(t.get("priority", "medium"))
-        cls = ' class="done"' if t["done"] else ""
-        tick = "&#8635;" if t["done"] else "&#10003;"  # ↺ : ✓
-        badges = f'<span class="badge badge-{priority}">{priority}</span>'
-        due_date = t.get("due_date", "")
-        if not t["done"] and due_date:
-            try:
-                if date.fromisoformat(due_date) < today:
-                    badges += (
-                        ' <span class="badge badge-overdue">overdue</span>'
-                    )
-            except ValueError:
-                pass
-        out.append(
-            f'<li{cls}>'
-            f'<form method="post" action="/toggle" class="row">'
-            f'<input type="hidden" name="id" value="{t["id"]}">'
-            f'<input type="hidden" name="edit_task" value="{t["task"]}">'
-            f'<input type="hidden" name="edit_priority" value="{t["priority"]}">'
-            f'<input type="hidden" name="edit_due_date" value="{due_date}">'
-            f'<button class="tick" title="toggle">{tick}</button>'
-            f'<span class="task">{task}</span>'
-            f'{badges}'
-            f'<button class="edit" type="submit" name="action" value="edit" title="edit" formaction="/edit">✎</button>'
-            f'<button class="del" formaction="/delete" title="delete">&#10005;</button>'
-            f'</form></li>'
-        )
+        if _editing_id == t["id"]:
+            out.append(_edit_row_html(t, today))
+        else:
+            out.append(_display_row_html(t, today))
     return "\n        ".join(out) or '<li class="empty">Nothing here — add something.</li>'
+
+
+def _display_row_html(t, today):
+    """Render a read-only todo row with toggle, delete, and edit buttons."""
+    task = html.escape(t["task"])  # never trust user input in HTML
+    priority = html.escape(t.get("priority", "medium"))
+    cls = ' class="done"' if t["done"] else ""
+    tick = "&#8635;" if t["done"] else "&#10003;"  # ↺ : ✓
+    badges = _badges_html(t, today, priority)
+    return (
+        f'<li{cls}>'
+        f'<form method="post" action="/toggle" class="row">'
+        f'<input type="hidden" name="id" value="{t["id"]}">'
+        f'<button class="tick" title="toggle">{tick}</button>'
+        f'<span class="task">{task}</span>'
+        f'{badges}'
+        f'<button class="edit" type="submit" name="action" value="edit" title="edit" formaction="/edit/start">✎</button>'
+        f'<button class="del" formaction="/delete" title="delete">&#10005;</button>'
+        f'</form></li>'
+    )
+
+
+def _edit_row_html(t, today):
+    """Render the row being edited as an editable inline form."""
+    task = html.escape(t["task"])
+    priority = html.escape(t.get("priority", "medium"))
+    due_date = html.escape(t.get("due_date", ""))
+    options = "".join(
+        f'<option value="{p}"{" selected" if p == priority else ""}>{p.title()}</option>'
+        for p in ("low", "medium", "high")
+    )
+    return (
+        f'<li>'
+        f'<form method="post" action="/edit" class="row">'
+        f'<input type="hidden" name="id" value="{t["id"]}">'
+        f'<input type="text" name="task" value="{task}" class="input-edit-task">'
+        f'<select name="priority" class="edit-select">{options}</select>'
+        f'<input type="date" name="due_date" value="{due_date}">'
+        f'<button type="submit">Save</button>'
+        f'<button name="action" value="cancel" formaction="/edit/cancel">Cancel</button>'
+        f'</form></li>'
+    )
+
+
+def _badges_html(t, today, priority):
+    """Build the priority/overdue badge markup for a todo."""
+    badges = f'<span class="badge badge-{priority}">{priority}</span>'
+    due_date = t.get("due_date", "")
+    if not t["done"] and due_date:
+        try:
+            if date.fromisoformat(due_date) < today:
+                badges += (
+                    ' <span class="badge badge-overdue">overdue</span>'
+                )
+        except ValueError:
+            pass
+    return badges
 
 
 def render_page():

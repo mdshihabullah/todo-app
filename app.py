@@ -10,6 +10,8 @@ Routes:
     POST /toggle    flip done        (form field: id)
     POST /delete    remove a todo    (form field: id)
     POST /edit      edit a todo      (form fields: id, task, priority, due_date)
+    POST /edit/start   enter edit mode for a todo (form field: id)
+    POST /edit/cancel  leave edit mode without saving
     POST /filter    filter by priority (form field: priority)
     POST /search    search todos       (form field: query)
 
@@ -71,6 +73,13 @@ class TodoHandler(BaseHTTPRequestHandler):
             priority = form.get("priority", ["medium"])[0].strip().lower()
             due_date = form.get("due_date", [""])[0].strip()
             todos.edit(todo_id, task, priority, due_date)
+            todos.clear_editing()
+            self._redirect()
+        elif self.path == "/edit/start":
+            todos.set_editing(int(form.get("id", ["0"])[0]))
+            self._redirect()
+        elif self.path == "/edit/cancel":
+            todos.clear_editing()
             self._redirect()
         elif self.path == "/filter":
             priority = form.get("priority", [""])[0].strip().lower()
