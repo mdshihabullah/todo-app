@@ -351,7 +351,6 @@ def render_page():
         .replace("{{SEL_MED}}", sel_med)
         .replace("{{SEL_HIGH}}", sel_high)
         .replace("{{CATEGORY_OPTIONS}}", category_options)
-        .replace("{{CATEGORY_VALUE}}", html.escape(fc, quote=True))
     )
 def search(query):
     """Return todos whose task text contains `query`, case-insensitive."""
