@@ -4,7 +4,6 @@ Run:  python3 -m unittest discover -s tests -v
 """
 
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path

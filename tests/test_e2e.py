@@ -10,13 +10,10 @@ import json
 import os
 import signal
 import subprocess
-import sys
 import time
 import unittest
 from pathlib import Path
 from urllib.request import urlopen
-from urllib.parse import urlencode
-from urllib.request import Request
 
 PROJECT = Path(__file__).resolve().parent.parent
 BASE = "http://localhost:9990"

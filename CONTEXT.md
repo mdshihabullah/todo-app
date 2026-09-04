@@ -22,10 +22,10 @@ This `CONTEXT.md` contains the domain vocabulary for the Tiny Todo application. 
 | **search** | Case-insensitive substring match on task text; returns matching todos |
 | **render** | Filling `page.html`'s placeholders (`{{TODO_ROWS}}`, `{{STAT_TOTAL}}`, `{{STAT_OPEN}}`, `{{STAT_DONE}}`) with live todo data |
 | **stats** | The triple `(total, open, done)` — total count of todos, number not done, number done |
-| **add** | Function that creates a new todo with given task, priority, and due_date; validates priority is one of low/medium/high |
+| **add** | Function that creates a new todo with given task, priority, due_date, plus optional category and description; validates priority is one of low/medium/high |
 | **toggle** | Function that flips the `done` flag of the todo with the given id |
 | **delete** | Function that removes the todo with the given id from the list |
-| **edit** | Function that updates a todo's task text, priority, and due date; exposed in the UI as an inline per-row edit form |
+| **edit** | Function that updates a todo's task text, priority, due date, category, and description; exposed in the UI as a modal edit form opened from a per-row ✎ button |
 | **HTML escaping** | All user-facing output uses `html.escape()` — user input is never trusted in HTML |
 | **JSON persistence** | Todos are saved to `todos.json` via atomic write (`.tmp` rename); the file contains `{"next_id": N, "todos": [...]}` |
 | **monotonic ID** | `_next_id` only ever increases; deleted IDs are never reused |
@@ -50,7 +50,7 @@ This `CONTEXT.md` contains the domain vocabulary for the Tiny Todo application. 
 - Should todos support due dates with overdue badging? (Already implemented)
 - Should search be case-insensitive? (Already implemented)
 - Should search match substrings? (Already implemented)
-- How should the UI handle showing/hiding completed todos?
+- How should the UI handle showing/hiding completed todos? (Resolved: completed todos are hidden by default, with a "Show completed" switch that reveals all open and done tasks; ON shows all, OFF filters done out)
 - How should multiple rows be prevented from being edited at once? (Resolved: only one row can be in edit mode at a time via a single `_editing_id`)
 
 ---
