@@ -2,8 +2,6 @@
 
 The web layer (app.py) calls these functions. The page (page.html) is
 rendered by render_page() below.
-
->>> This is the first file you will edit: the search() exercise. <<<
 """
 
 import html
@@ -25,6 +23,7 @@ TODOS = [
 
 _next_id = 4  # ids only go up, never reused
 _filter_priority = None  # None means show all
+_filter_category = None  # None means show all
 _search_query = None  # None means show all
 _show_done = False  # completed todos hidden by default; toggle to reveal
 
@@ -76,7 +75,7 @@ def load():
         _seed_next_id()
 
 
-def add(task, priority="medium", due_date=""):
+def add(task, priority="medium", due_date="", category="", description=""):
     """Add a new todo (string). Returns the new todo dict, or None if the
     task is empty/whitespace-only (robust: nothing is added)."""
     global _next_id
@@ -91,6 +90,8 @@ def add(task, priority="medium", due_date=""):
         "done": False,
         "priority": priority,
         "due_date": due_date or "",
+        "category": (category or "").strip(),
+        "description": (description or "").strip(),
     }
     TODOS.append(todo)
     _next_id += 1
@@ -122,7 +123,7 @@ def delete(todo_id):
     return removed
 
 
-def restore(task, priority="medium", due_date="", done=False):
+def restore(task, priority="medium", due_date="", done=False, category="", description=""):
     """Re-insert a previously deleted todo. IDs are monotonic and never reused,
     so a restored todo gets a fresh id (the original is gone for good)."""
     global _next_id
@@ -137,6 +138,8 @@ def restore(task, priority="medium", due_date="", done=False):
         "done": done,
         "priority": priority,
         "due_date": due_date or "",
+        "category": (category or "").strip(),
+        "description": (description or "").strip(),
     }
     TODOS.append(todo)
     _next_id += 1
@@ -144,7 +147,7 @@ def restore(task, priority="medium", due_date="", done=False):
     return todo
 
 
-def edit(todo_id, task, priority, due_date):
+def edit(todo_id, task, priority, due_date, category="", description=""):
     """Edit the todo with this id.
 
     A blank/whitespace task preserves the existing text rather than wiping it
@@ -161,6 +164,8 @@ def edit(todo_id, task, priority, due_date):
                 todo["task"] = new_task
             todo["priority"] = priority
             todo["due_date"] = due_date or ""
+            todo["category"] = (category or "").strip()
+            todo["description"] = (description or "").strip()
             save()
             return todo
     return None
@@ -193,17 +198,48 @@ def stats():
     return (len(TODOS), len(TODOS) - done, done)
 
 
+def mark_all_done():
+    """Mark every todo as done. Returns the number of todos updated."""
+    updated = 0
+    for t in TODOS:
+        if not t["done"]:
+            t["done"] = True
+            updated += 1
+    if updated:
+        save()
+    return updated
+
+
+def clear_completed():
+    """Remove all completed todos. Returns the number removed."""
+    global TODOS
+    keep = [t for t in TODOS if not t["done"]]
+    removed = len(TODOS) - len(keep)
+    TODOS = keep
+    if removed:
+        save()
+    return removed
+
+
+def export_json():
+    """Return all todos as a JSON export payload (list of todo dicts)."""
+    return json.dumps(TODOS, indent=2, ensure_ascii=False)
+
+
 # --- rendering -----------------------------------------------------------
 
 load()  # hydrate from disk (falls back to seeds on first run)
 
 def _visible_todos():
-    """Apply the active view filters in order: priority, then search, then the
-    completed/hidden-by-default toggle. Filter and search AND-compose, and the
-    completed toggle is a separate view concern layered on top."""
+    """Apply the active view filters in order: priority, then category, then
+    search, then the completed/hidden-by-default toggle. Filters AND-compose,
+    and the completed toggle is a separate view concern layered on top."""
     todos_list = TODOS
     if _filter_priority:
         todos_list = [t for t in todos_list if t.get("priority") == _filter_priority]
+    if _filter_category:
+        c = _filter_category.lower()
+        todos_list = [t for t in todos_list if c == (t.get("category") or "").lower()]
     if _search_query:
         q = _search_query.lower()
         todos_list = [t for t in todos_list if q in t["task"].lower()]
@@ -231,11 +267,25 @@ def _display_row_html(t, today):
     cls = ' class="done"' if t["done"] else ""
     tick = "&#8635;" if t["done"] else "&#10003;"  # ↺ : ✓
     badges = _badges_html(t, today, priority)
+    desc = html.escape(t.get("description", ""))
     data = html.escape(
         json.dumps({
             "id": t["id"], "task": t["task"], "priority": t.get("priority", "medium"),
             "due_date": t.get("due_date", ""),
+            "category": t.get("category", ""),
+            "description": t.get("description", ""),
         }), quote=True
+    )
+    desc_html = (
+        f'<div class="desc" hidden>{desc}</div>'
+        if t.get("description")
+        else ""
+    )
+    desc_toggle = (
+        '<button class="desc-toggle" type="button" title="Show description" '
+        'aria-label="Toggle description">&#8943;</button>'
+        if t.get("description")
+        else ""
     )
     return (
         f'<li{cls} data-todo="{data}">'
@@ -244,15 +294,20 @@ def _display_row_html(t, today):
         f'<button class="tick" title="toggle">{tick}</button>'
         f'<span class="task">{task}</span>'
         f'{badges}'
+        f'{desc_toggle}'
         f'<button class="edit" type="button" title="edit" data-edit aria-label="Edit">✎</button>'
         f'<button class="del" type="button" title="delete" data-delete aria-label="Delete">&#10005;</button>'
-        f'</form></li>'
+        f'</form>{desc_html}</li>'
     )
 
 
 def _badges_html(t, today, priority):
-    """Build the priority/overdue badge markup for a todo."""
-    badges = f'<span class="badge badge-{priority}">{priority}</span>'
+    """Build the category/priority/overdue badge markup for a todo."""
+    badges = ""
+    category = (t.get("category") or "").strip()
+    if category:
+        badges += f'<span class="badge badge-category">{html.escape(category)}</span> '
+    badges += f'<span class="badge badge-{priority}">{priority}</span>'
     due_date = t.get("due_date", "")
     if not t["done"] and due_date:
         try:
@@ -271,10 +326,18 @@ def render_page():
     total, open_n, done = stats()
     search_value = html.escape(_search_query or "", quote=True)
     fp = _filter_priority or ""
+    fc = _filter_category or ""
     search_active = "is-active" if _search_query else ""
     sel_low = " selected" if fp == "low" else ""
     sel_med = " selected" if fp == "medium" else ""
     sel_high = " selected" if fp == "high" else ""
+
+    cats = sorted({(t.get("category") or "").strip() for t in TODOS if (t.get("category") or "").strip()})
+    category_options = ""
+    for c in cats:
+        selected = " selected" if c.lower() == fc.lower() else ""
+        category_options += f'<option value="{html.escape(c, quote=True)}"{selected}>{html.escape(c)}</option>'
+
     return (
         page
         .replace("{{TODO_ROWS}}", rows_html())
@@ -287,6 +350,7 @@ def render_page():
         .replace("{{SEL_LOW}}", sel_low)
         .replace("{{SEL_MED}}", sel_med)
         .replace("{{SEL_HIGH}}", sel_high)
+        .replace("{{CATEGORY_OPTIONS}}", category_options)
     )
 def search(query):
     """Return todos whose task text contains `query`, case-insensitive."""
